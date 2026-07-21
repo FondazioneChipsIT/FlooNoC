@@ -235,6 +235,7 @@ class Graph(nx.DiGraph):  # pylint: disable=too-many-public-methods
         node_obj=None,
         edge_obj=None,
         connect=True,
+        ordering: str = "",
     ):  # pylint: disable=too-many-arguments
         """Add nodes as an array."""
         match array:
@@ -246,45 +247,48 @@ class Graph(nx.DiGraph):  # pylint: disable=too-many-public-methods
                         self.add_edge(node, f"{name}_{i-1}", type=edge_type, obj=edge_obj)
                         self.add_edge(f"{name}_{i-1}", node, type=edge_type, obj=edge_obj)
             case [n, m]:
-                for i in range(n):
-                    for j in range(m):
-                        node = f"{name}_{i}_{j}"
-                        self.add_node(node, type=node_type, arr_idx=(i, j),
-                                      arr_dim=array, obj=node_obj)
-                        if i > 0 and connect:
-                            self.add_edge(
-                                node,
-                                f"{name}_{i-1}_{j}",
-                                type=edge_type,
-                                obj=edge_obj,
-                                src_dir=XYDirections.WEST.value,
-                                dst_dir=XYDirections.EAST.value,
-                            )
-                            self.add_edge(
-                                f"{name}_{i-1}_{j}",
-                                node,
-                                type=edge_type,
-                                obj=edge_obj,
-                                src_dir=XYDirections.EAST.value,
-                                dst_dir=XYDirections.WEST.value,
-                            )
-                        if j > 0 and connect:
-                            self.add_edge(
-                                node,
-                                f"{name}_{i}_{j-1}",
-                                type=edge_type,
-                                obj=edge_obj,
-                                src_dir=XYDirections.SOUTH.value,
-                                dst_dir=XYDirections.NORTH.value,
-                            )
-                            self.add_edge(
-                                f"{name}_{i}_{j-1}",
-                                node,
-                                type=edge_type,
-                                obj=edge_obj,
-                                src_dir=XYDirections.NORTH.value,
-                                dst_dir=XYDirections.SOUTH.value,
-                            )
+                if ordering == "row_major":
+                    index = ((i, j) for j in range(m) for i in range(n))
+                else:
+                    index = ((i, j) for i in range(n) for j in range(m))
+                for i, j in index:
+                    node = f"{name}_{i}_{j}"
+                    self.add_node(node, type=node_type, arr_idx=(i, j),
+                                    arr_dim=array, obj=node_obj)
+                    if i > 0 and connect:
+                        self.add_edge(
+                            node,
+                            f"{name}_{i-1}_{j}",
+                            type=edge_type,
+                            obj=edge_obj,
+                            src_dir=XYDirections.WEST.value,
+                            dst_dir=XYDirections.EAST.value,
+                        )
+                        self.add_edge(
+                            f"{name}_{i-1}_{j}",
+                            node,
+                            type=edge_type,
+                            obj=edge_obj,
+                            src_dir=XYDirections.EAST.value,
+                            dst_dir=XYDirections.WEST.value,
+                        )
+                    if j > 0 and connect:
+                        self.add_edge(
+                            node,
+                            f"{name}_{i}_{j-1}",
+                            type=edge_type,
+                            obj=edge_obj,
+                            src_dir=XYDirections.SOUTH.value,
+                            dst_dir=XYDirections.NORTH.value,
+                        )
+                        self.add_edge(
+                            f"{name}_{i}_{j-1}",
+                            node,
+                            type=edge_type,
+                            obj=edge_obj,
+                            src_dir=XYDirections.NORTH.value,
+                            dst_dir=XYDirections.SOUTH.value,
+                        )
             case _:
                 raise NotImplementedError(f"Unsupported array {array}")
 

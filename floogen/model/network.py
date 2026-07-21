@@ -38,6 +38,19 @@ class NetworkType(str, Enum):
     def __str__(self):
         return self.value
 
+class NetworkOrdering(str, Enum):
+    """Network ordering enum.
+
+    Attributes:
+        ROW_MAJOR: The indexes and address ranges are assigned to the nodes following a row-major ordering (X first).
+        COLUMN_MAJOR: The indexes and address ranges are assigned to the nodes following a column-major ordering (Y first).
+    """
+
+    ROW_MAJOR = "row_major"
+    COLUMN_MAJOR = "column_major"
+
+    def __str__(self):
+        return self.value
 
 class Network(BaseModel):  # pylint: disable=too-many-public-methods
     """
@@ -47,6 +60,7 @@ class Network(BaseModel):  # pylint: disable=too-many-public-methods
         name (str): Specifies the name of the network, which will be used to name the generated files (e.g. `floo_<name>_pkg.sv` and `floo_<name>_top.sv`).
         description (Optional[str]): A short description of the network. It is currently not used by _FlooGen_, and it is currently only for user reference.
         network_type (NetworkType): Specifies the type of network that is being generated. See the [`NetworkType`][floogen.model.network.NetworkType] enum for supported options.
+        network_ordering (bool): Specifies if the network is created following a row-major or column-major ordering
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
@@ -54,13 +68,14 @@ class Network(BaseModel):  # pylint: disable=too-many-public-methods
     name: str
     description: Optional[str]
     network_type: NetworkType
+    network_ordering: Optional[NetworkOrdering] = NetworkOrdering.COLUMN_MAJOR
     protocols: List[AXI4]
     endpoints: List[EndpointDesc]
     routers: List[RouterDesc]
     connections: List[ConnectionDesc]
     graph: Optional[Graph] = None
     routing: Routing
-
+    
     def create_network(self):
         """Initialize the network as a graph."""
         self.graph = Graph()
@@ -170,6 +185,7 @@ class Network(BaseModel):  # pylint: disable=too-many-public-methods
                         edge_type="link",
                         node_obj=rt_desc,
                         connect=rt_desc.auto_connect,
+                        ordering=self.network_ordering,
                     )
                 # tree case
                 case (None, tree_list):
@@ -231,6 +247,7 @@ class Network(BaseModel):  # pylint: disable=too-many-public-methods
                         node_type="endpoint",
                         node_obj=ep_desc,
                         connect=False,
+                        ordering=self.network_ordering,
                     )
                     self.graph.add_nodes_as_array(
                         name=f"{ep_desc.name}_ni",
@@ -238,6 +255,7 @@ class Network(BaseModel):  # pylint: disable=too-many-public-methods
                         node_type="network_interface",
                         node_obj=ep_desc,
                         connect=False,
+                        ordering=self.network_ordering,
                     )
                     ep_nodes = self.graph.get_nodes_from_range(
                         ep_desc.name, [(0, m - 1), (0, n - 1)]
@@ -549,7 +567,7 @@ class Network(BaseModel):  # pylint: disable=too-many-public-methods
                     ni_dict["arr_idx"] = Coord(x=arr_idx[0], y=arr_idx[1])
                     if ep_desc.is_sbr():
                         ni_dict["addr_range"] = [
-                            rng.model_copy().set_arr(arr_idx, arr_dim) for rng in ep_desc.addr_range
+                            rng.model_copy().set_arr(arr_idx, arr_dim, self.network_ordering) for rng in ep_desc.addr_range
                         ]
                 # Invalid case
                 case _:
@@ -710,10 +728,14 @@ class Network(BaseModel):  # pylint: disable=too-many-public-methods
                 arr_dim = addr_rule.addr_range.arr_dim
                 arr_x_bits = clog2(arr_dim[0])
                 arr_y_bits = clog2(arr_dim[1])
-                mask_offset_y = clog2(addr_rule.addr_range.size)
+                mask_offset_lo = clog2(addr_rule.addr_range.size)
+                if self.network_ordering == NetworkOrdering.ROW_MAJOR:
+                    mask_offset = (mask_offset_lo, mask_offset_lo + arr_x_bits)
+                else:
+                    mask_offset = (mask_offset_lo + arr_y_bits, mask_offset_lo)
                 mask_fields = {
                     "mask_len": (arr_x_bits, arr_y_bits),
-                    "mask_offset": (mask_offset_y + arr_y_bits, mask_offset_y),
+                    "mask_offset": mask_offset,
                     "base_id": (addr_rule.dest.x - addr_rule.addr_range.arr_idx[0],
                                 addr_rule.dest.y - addr_rule.addr_range.arr_idx[1]),
                 }

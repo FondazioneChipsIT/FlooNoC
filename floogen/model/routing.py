@@ -375,6 +375,7 @@ class AddrRange(BaseModel):
         size (int): Size of the address range.
         base (Optional[int]): Base address used for calculating ranges in endpoint arrays.
         en_collective (bool): If true, marks this range as a multicast/collective destination.
+        ordering (str): Specifies how address ranges are assigned, using either column-major or row-major ordering
     """
 
     model_config = ConfigDict(extra="forbid", validate_assignement=True)
@@ -390,6 +391,8 @@ class AddrRange(BaseModel):
     en_collective: bool = False
     desc: Optional[str] = None
     rdl_addrmap_grp: Optional[List[str]] = None
+    ordering: Optional[str] = None
+
     """One or more SystemRDL addrmap group tags this address range belongs to."""
 
     def __str__(self):
@@ -410,7 +413,7 @@ class AddrRange(BaseModel):
             raise ValueError("Invalid address range specification")
         addr_dict = {k: v for k, v in self.items() if v is not None}
         match addr_dict:
-            case {"size": size, "base": base, "arr_idx": arr_idx}:
+            case {"size": size, "base": base, "arr_idx": arr_idx, "ordering": ordering}:
                 match arr_idx:
                     case (m,):
                         addr_dict["start"] = base + size * m
@@ -418,7 +421,11 @@ class AddrRange(BaseModel):
                     case (m, n):
                         if addr_dict["arr_dim"] is None:
                             raise ValueError("Array dimension must be specified for 2D arrays")
-                        addr_dict["start"] = base + size * (m * addr_dict["arr_dim"][1] + n)
+                        if ordering == "row_major":
+                            addr_idx = n * addr_dict["arr_dim"][0] + m
+                        else:
+                            addr_idx = m * addr_dict["arr_dim"][1] + n
+                        addr_dict["start"] = base + size * addr_idx
                         addr_dict["end"] = addr_dict["start"] + size
                     case _:
                         raise ValueError("Invalid array index specification")
@@ -447,16 +454,21 @@ class AddrRange(BaseModel):
             )
         return self
 
-    def set_arr(self, arr_idx, arr_dim):
+    def set_arr(self, arr_idx, arr_dim, ordering="column_major"):
         """Update the address range with the given index."""
         self.arr_idx = arr_idx
         self.arr_dim = arr_dim
+        self.ordering = ordering
         if self.base is not None:
             match arr_idx:
                 case (m,):
                     self.start = self.base + self.size * m
                 case (m, n):
-                    self.start = self.base + self.size * (m * arr_dim[1] + n)
+                    if ordering == "row_major":
+                        idx = n * arr_dim[0] + m
+                    else:
+                        idx = m * arr_dim[1] + n
+                    self.start = self.base + self.size * idx
             self.end = self.start + self.size
         else:
             raise ValueError("Address range base not set")
